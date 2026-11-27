@@ -43,13 +43,14 @@ const server = http.createServer((req, res) => {
   res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
   res.end(PAGE);
 });
-const wss = new WebSocketServer({ noServer: true, maxPayload: 65536 });
+const wss = new WebSocketServer({ noServer: true, maxPayload: 1048576, skipUTF8Validation: true });
 
 server.on('upgrade', (req, sock, head) => {
+  console.log('upgrade', req.url.replace(/\d{6}/, 'ROOM'), req.headers['sec-websocket-protocol'] || '-', req.headers['sec-websocket-version']);
   const mc = req.url.match(/^\/mc\/(\d{6})\/?$/);
   if (!mc && req.url !== '/web') return sock.destroy();
   wss.handleUpgrade(req, sock, head, ws => {
-    ws.on('error', () => {});
+    ws.on('error', e => console.log('socket error', e.code, e.message));
     mc ? world(ws, mc[1]) : web(ws);
   });
 });
@@ -58,7 +59,10 @@ function world(ws, code) {
   const r = room(code);
   if (r.mc) return ws.close(1008, 'room in use');
   r.mc = ws;
-  run(r, `say เชื่อมโลกกับห้อง ${code} แล้ว`);
+  console.log('world connected');
+  const started = Date.now();
+  ws.on('close', (c, why) => console.log('world closed', c, String(why), (Date.now() - started) + 'ms'));
+  setTimeout(() => run(r, `say VoiceLink connected ${code}`).then(b => console.log('say result', b ? b.statusCode : 'no reply')), 1000);
   ws.on('message', d => {
     try { const m = JSON.parse(d), f = r.pending.get(m.header.requestId); if (f) { r.pending.delete(m.header.requestId); f(m.body); } } catch (e) {}
   });
